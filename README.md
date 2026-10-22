@@ -96,4 +96,3 @@ Rule checks are intentionally scoped to the seeded brand pack and are not univer
 - [WCAG 2.2](https://www.w3.org/TR/WCAG22/)
 - [OWASP: Prompt Injection](https://genai.owasp.org/llmrisk/llm01-prompt-injection/)
 - [OpenAI: Structured model outputs](https://developers.openai.com/api/docs/guides/structured-outputs)
-

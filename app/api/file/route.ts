@@ -1,0 +1,4 @@
+import { env } from "cloudflare:workers";
+import { fail, readWorkspace } from "@/lib/store";
+export const dynamic="force-dynamic";
+export async function GET(request:Request){try{const {key,w}=await readWorkspace(request);const id=new URL(request.url).searchParams.get("id");const a=w.campaigns.flatMap(c=>c.assets).find(a=>a.id===id);if(!a)throw new Error("NOT_FOUND: File not found in this workspace");const file=await env.BUCKET?.get(`${key}/${a.id}`);if(!file)throw new Error("NOT_FOUND: File is unavailable");return new Response(file.body,{headers:{"Content-Type":a.type,"Cache-Control":"private, no-store","X-Content-Type-Options":"nosniff","Content-Security-Policy":"sandbox","Content-Disposition":`${a.type==="application/pdf"?"attachment":"inline"}; filename*=UTF-8''${encodeURIComponent(a.name)}`}});}catch(e){return fail(e);}}
