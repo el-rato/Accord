@@ -1,16 +1,16 @@
-import { env } from "cloudflare:workers";
 import { z } from "zod";
 import { bootstrap, checkOrigin, fail, json, persist, readWorkspace, SESSION_COOKIE } from "@/lib/store";
 import { type Campaign, type Rule, type Workspace, contentHash, logEvent, makeWorkspace, openBlockers } from "@/lib/model";
 import { runReview, DEFAULT_GEMINI_MODEL } from "@/lib/review";
 
 export const dynamic="force-dynamic";
+export const maxDuration=60;
 const bodySchema=z.object({ action:z.enum(["role","create","save","review","submit","approve","request_changes","dismiss","comment","rule","release","reset","delete_asset"]),version:z.number().int().positive(),campaignId:z.string().max(80).optional(),role:z.enum(["creator","reviewer"]).optional(),title:z.string().max(100).optional(),text:z.string().max(14000).optional(),purpose:z.string().max(1000).optional(),audience:z.string().max(100).optional(),channel:z.string().max(100).optional(),note:z.string().max(2000).optional(),findingId:z.string().max(80).optional(),assetId:z.string().max(80).optional(),confirmCoverage:z.boolean().optional(),rule:z.object({id:z.string().max(80),title:z.string().min(1).max(120),instruction:z.string().min(5).max(2000),active:z.boolean(),value:z.number().min(0).max(100).optional(),expires:z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),replacement:z.string().max(120).optional()}).optional()});
 function assert(condition:unknown,message:string):asserts condition {if(!condition)throw new Error(message);}
 function reviewer(w:Workspace){assert(w.actor==="reviewer","FORBIDDEN: Switch to the reviewer persona to perform this action");}
 async function current(w:Workspace,c:Campaign){assert(c.review,"Run a review before continuing");assert(c.review.revision===c.revision&&c.review.packVersion===w.packVersion&&c.review.hash===await contentHash(c),"This review is out of date. Run the checks again.");}
 
-export async function GET(request:Request){try{const {w,token}=await bootstrap(request);const e=env as unknown as Record<string,string|undefined>;return json({workspace:w,aiConfigured:!!e.GEMINI_API_KEY,model:e.GEMINI_MODEL??DEFAULT_GEMINI_MODEL,sandbox:true},200,token?{"Set-Cookie":`${SESSION_COOKIE}=${token}; Path=/; HttpOnly; SameSite=Lax; Max-Age=604800${new URL(request.url).protocol==="https:"?"; Secure":""}`}:{})}catch(e){return fail(e);}}
+export async function GET(request:Request){try{const {w,token}=await bootstrap(request);const e=process.env;return json({workspace:w,aiConfigured:!!e.GEMINI_API_KEY,model:e.GEMINI_MODEL??DEFAULT_GEMINI_MODEL,sandbox:true},200,token?{"Set-Cookie":`${SESSION_COOKIE}=${token}; Path=/; HttpOnly; SameSite=Lax; Max-Age=604800${new URL(request.url).protocol==="https:"?"; Secure":""}`}:{})}catch(e){return fail(e);}}
 
 export async function POST(request:Request){try{
   checkOrigin(request);
@@ -35,7 +35,7 @@ export async function POST(request:Request){try{
       logEvent(w,"Revision saved",`Revision ${c!.revision}; any previous approval is invalidated.`,c!.id);break;
     }
     case "review":{
-      assert(c!.text.trim()||c!.assets.length,"Add content before running a review");const e=env as unknown as Record<string,string|undefined>;
+      assert(c!.text.trim()||c!.assets.length,"Add content before running a review");const e=process.env;
       c!.review=await runReview(w,c!,e.GEMINI_API_KEY,e.GEMINI_MODEL??DEFAULT_GEMINI_MODEL);c!.status=openBlockers(c!).length?"Needs changes":"Draft";delete c!.approval;delete c!.releasedAt;
       logEvent(w,"Review completed",`${c!.review.findings.length} findings; ${openBlockers(c!).length} blocking. ${c!.review.engine}.`,c!.id);break;
     }

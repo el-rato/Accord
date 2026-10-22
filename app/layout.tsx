@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import "./accord.css";
 
 export const metadata: Metadata = {
-  title: "Accord — A second look before the world sees it",
+  title: "Accord | Brand review",
   description: "Review campaign content against approved brand references, make evidence-backed corrections and approve the exact version you release.",
   icons: {
     icon: "/favicon.svg",

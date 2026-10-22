@@ -44,3 +44,7 @@ yarn-error.log*
 
 # OS metadata
 .DS_Store
+
+# Local Next.js demo storage and Vercel linkage
+/.accord-data/
+/.vercel/

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { unzipSync, strFromU8 } from "fflate";
-const origin=process.env.ACCORD_TEST_URL||"http://127.0.0.1:5173";
+const origin=process.env.ACCORD_TEST_URL||"http://127.0.0.1:3000";
 const results=[];
 const report=(name)=>{results.push(name);console.log(`PASS ${name}`);};
 async function start(){const r=await fetch(`${origin}/api/workspace`);assert.equal(r.status,200);const data=await r.json();return {cookie:r.headers.get("set-cookie").split(";")[0],w:data.workspace};}
@@ -23,9 +23,25 @@ await post(a,"comment",{campaignId:id,note:"A saved reviewer comment."});const o
 const png=Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jR1kAAAAASUVORK5CYII=","base64");
 const form=new FormData();form.set("file",new File([png],"test-poster.png",{type:"image/png"}));form.set("campaignId",id);form.set("version",String(a.w.version));form.set("text","Save 30% on every plan");form.set("logoVersion","2025.2");form.set("textColor","#eeeeee");form.set("backgroundColor","#ffffff");
 r=await fetch(`${origin}/api/upload`,{method:"POST",headers:{Origin:origin,Cookie:a.cookie},body:form});assert.equal(r.status,200);a.w=(await r.json()).workspace;const asset=c().assets.at(-1);
-r=await fetch(`${origin}${asset.url}`,{headers:{Cookie:a.cookie}});assert.equal(r.status,200);assert.equal((await r.arrayBuffer()).byteLength,png.length);r=await fetch(`${origin}${asset.url}`,{headers:{Cookie:b.cookie}});assert.equal(r.status,404);report("Uploaded originals persist in R2 and remain workspace-private");
+r=await fetch(`${origin}${asset.url}`,{headers:{Cookie:a.cookie}});assert.equal(r.status,200);assert.equal((await r.arrayBuffer()).byteLength,png.length);r=await fetch(`${origin}${asset.url}`,{headers:{Cookie:b.cookie}});assert.equal(r.status,404);report("Uploaded originals persist in private storage and remain workspace-private");
 await post(a,"review",{campaignId:id});assert(c().review.findings.some(f=>f.category==="Visual"));assert(c().review.findings.some(f=>f.category==="Accessibility"));assert(c().review.findings.some(f=>f.location==="Across campaign"));report("Uploaded creative participates in visual, accessibility and cross-item checks");
 for(const finding of c().review.findings.filter(f=>f.blocking&&f.state==="Open"))await post(a,"dismiss",{campaignId:id,findingId:finding.id,note:"Fictional API test exception: reviewer inspected the demonstration content and recorded the decision."});
 await post(a,"submit",{campaignId:id});await post(a,"approve",{campaignId:id,note:"Fictional upload and export test. Metadata limits inspected.",confirmCoverage:true});await post(a,"release",{campaignId:id});
 r=await fetch(`${origin}/api/export?id=${id}`,{headers:{Cookie:a.cookie}});assert.equal(r.status,200);assert.equal(r.headers.get("content-type"),"application/zip");const files=unzipSync(new Uint8Array(await r.arrayBuffer()));assert.equal(strFromU8(files["approved-copy.txt"]),c().text);assert.equal(files["assets/1-test-poster.png"].length,png.length);assert.equal(JSON.parse(strFromU8(files["review-receipt.json"])).approval.hash,c().approval.hash);report("ZIP export includes exact approved copy, original file and matching evidence receipt");
+const racingVersion=a.w.version;
+const race=await Promise.all(["First racing update","Second racing update"].map(note=>fetch(`${origin}/api/workspace`,{method:"POST",headers:{Origin:origin,Cookie:a.cookie,"Content-Type":"application/json"},body:JSON.stringify({action:"comment",version:racingVersion,campaignId:id,note})})));
+assert.deepEqual(race.map(r=>r.status).sort(),[200,409]);
+a.w=(await (await fetch(`${origin}/api/workspace`,{headers:{Cookie:a.cookie}})).json()).workspace;
+report("Simultaneous writes preserve one update and reject the conflicting update");
+const oversized=new FormData();oversized.set("file",new File([new Uint8Array(4000001)],"too-large.png",{type:"image/png"}));oversized.set("campaignId",id);oversized.set("version",String(a.w.version));
+r=await fetch(`${origin}/api/upload`,{method:"POST",headers:{Origin:origin,Cookie:a.cookie},body:oversized});assert.equal(r.status,400);assert((await r.json()).error.includes("4 MB"));report("Files exceeding the Vercel-safe upload cap are rejected");
+const large=new Uint8Array(2400000);large.set(png);
+for(let index=0;index<2;index++){
+  const f=new FormData();f.set("file",new File([large],`large-${index}.png`,{type:"image/png"}));f.set("campaignId",id);f.set("version",String(a.w.version));f.set("alt","Fictional API fixture");
+  r=await fetch(`${origin}/api/upload`,{method:"POST",headers:{Origin:origin,Cookie:a.cookie},body:f});assert.equal(r.status,200);a.w=(await r.json()).workspace;
+}
+await post(a,"review",{campaignId:id});
+for(const finding of c().review.findings.filter(f=>f.blocking&&f.state==="Open"))await post(a,"dismiss",{campaignId:id,findingId:finding.id,note:"Disposable API fixture inspected for large release package test."});
+await post(a,"submit",{campaignId:id});await post(a,"approve",{campaignId:id,note:"Large fictional export fixture inspected.",confirmCoverage:true});await post(a,"release",{campaignId:id});
+r=await fetch(`${origin}/api/export?id=${id}`,{headers:{Cookie:a.cookie}});assert.equal(r.status,200);assert.equal(r.headers.get("content-length"),null);const largeZip=new Uint8Array(await r.arrayBuffer());assert(largeZip.length>4500000);const largeFiles=unzipSync(largeZip);assert.equal(largeFiles["assets/2-large-0.png"].length,large.length);assert.equal(largeFiles["assets/3-large-1.png"].length,large.length);report("A release larger than 4.5 MB streams complete original files");
 console.log(`\n${results.length} end-to-end API checks passed. AI provider connectivity is a separate check.`);

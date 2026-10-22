@@ -1,6 +1,6 @@
 import { fail, readWorkspace } from "@/lib/store";
 import { contentHash, openBlockers } from "@/lib/model";
-import { env } from "cloudflare:workers";
+import { getOriginal } from "@/lib/storage";
 import { zipSync, strToU8 } from "fflate";
 export const dynamic="force-dynamic";
 export async function GET(request:Request){try{
@@ -17,11 +17,16 @@ export async function GET(request:Request){try{
   if(params.get("format")==="json")return new Response(JSON.stringify(receipt,null,2),{headers:{"Content-Type":"application/json","Cache-Control":"private, no-store","Content-Disposition":`attachment; filename="${name}.json"`}});
   const files:Record<string,Uint8Array>={"approved-copy.txt":strToU8(c.text),"review-receipt.json":strToU8(JSON.stringify(receipt,null,2))};
   for(const [index,a] of c.assets.entries()){
-    const original=await env.BUCKET?.get(`${key}/${a.id}`);
+    const original=await getOriginal(key,a.id);
     if(!original)throw new Error("An approved original is unavailable. Export cancelled; no incomplete package was released.");
     const safe=a.name.replace(/[^a-zA-Z0-9._-]/g,"_").slice(0,100)||"creative";
-    files[`assets/${index+1}-${safe}`]=new Uint8Array(await original.arrayBuffer());
+    files[`assets/${index+1}-${safe}`]=original;
   }
   const archive=zipSync(files,{level:0});
-  return new Response(archive,{headers:{"Content-Type":"application/zip","Cache-Control":"private, no-store","Content-Disposition":`attachment; filename="${name}.zip"`}});
+  let offset=0;
+  const stream=new ReadableStream<Uint8Array>({pull(controller){
+    if(offset>=archive.length){controller.close();return;}
+    const next=Math.min(offset+65536,archive.length);controller.enqueue(archive.subarray(offset,next));offset=next;
+  }});
+  return new Response(stream,{headers:{"Content-Type":"application/zip","Cache-Control":"private, no-store","Content-Disposition":`attachment; filename="${name}.zip"`}});
 }catch(e){return fail(e);}}

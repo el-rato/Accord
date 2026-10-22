@@ -1,98 +1,105 @@
 # Accord
 
-Round 2 implementation for the Inkloom AI brand-governance problem at CodeAxis. Built by Team Noct (solo participant).
+Brand review and revision approval for Team Noct's CodeAxis submission.
 
-Accord reviews a campaign against versioned, approved brand references. Creators can inspect cited findings, revise copy and send a specific revision for a human decision. Export is enforced on the server and includes the approved copy, original creative files and an audit receipt.
+Accord checks campaign content against versioned brand references. Creators inspect source-linked findings, save corrections and submit a revision for a human decision. Release verifies the exact content hash and downloads approved copy, original files and an evidence receipt.
 
-## Try the workflow
+## Deploy on Vercel
 
-1. Open **Review the sample campaign**, then **Run checks**.
-2. Expand a finding to inspect its source. Try submitting the unchanged draft: the server rejects its blocking issues.
-3. Use individual edits or **Use corrected example**, then **Save revision** and **Run checks** again.
-4. **Submit for approval**. Choose **Reviewer · demo** in the top bar.
-5. **Approve revision**, write a decision note and explicitly confirm coverage. **Verify & export** downloads a ZIP.
-6. Save another edit or update a brand reference: the old approval becomes invalid.
+1. Import **el-rato/Accord** into Vercel. Choose **Next.js**, repository root `./`, Node.js **22.x**. Keep the default output directory and use `npm run build`.
+2. In the project's **Storage** section, connect a **Neon Postgres** database. Ensure it provides `DATABASE_URL` to the deployment environment. Accord creates its `accord_workspaces` table on first use; the database role needs permission to create it.
+3. Connect a **private Vercel Blob store** to the same project. Use its `BLOB_STORE_ID` with Vercel OIDC, or its server-only `BLOB_READ_WRITE_TOKEN`. Do not create a public store for these files.
+4. Add `GEMINI_API_KEY` when ready. It is optional: fixed rules and human review work without it. `GEMINI_MODEL` defaults to `gemini-3.8-flash`.
+5. Redeploy after connecting storage or changing environment variables. Set the variables in Production and any Preview environment you intend to test.
 
-Each browser session receives a separate server-persisted sandbox. Lumen is fictional. Persona switching demonstrates workflow permissions; it is **not** authentication of distinct employees and does not provide production separation of duties.
+The app now uses **standard Next.js**, not Vinext or a Cloudflare Worker. Do not select Vite, configure `dist/` as output, or use the old Sites build command. The original Sites deployment is separate and is not updated by Vercel deployments.
 
-## Implemented
+`vercel.json` declares the framework and build command. No credentials belong in that file, browser code or a `NEXT_PUBLIC_` variable. `.env.example` lists names only; local environment files and `.vercel/` are ignored.
 
-- Campaign creation, intended purpose, audience and channel.
-- Versioned brand references with reviewer-only changes and review invalidation.
-- Rule checks for discount, plan scope, eligibility, expiry, unsupported-promise patterns, glossary spelling and pressure-language patterns.
-- Creator-entered image text checked against captions; alternative-text presence, declared logo version and supplied-colour contrast checks.
-- PNG/JPEG and text-based PDF uploads in private R2 storage. PDF.js extracts PDF text locally before submission. Scanned PDFs are rejected with an explanation.
-- Findings with source snapshots, category, severity, blocking status and method.
-- Local suggested edits, saved content revisions, before/after revision views, comments, request-changes decisions and reasoned dismissals.
-- Server-enforced review/approval/release state transitions and SHA-256 approval binding.
-- ZIP export containing exact copy, uploaded originals and JSON evidence/audit receipt. Missing originals fail the export.
-- Category counts, rule-disagreement summaries and persisted activity history.
-- Optimistic concurrency, same-origin mutation checks and session-bound file/data access.
-- Optional server-side Gemini contextual review. **This is active only when a valid runtime key is configured. Without it, the UI says rules + human review; no AI result is fabricated.**
+Without `DATABASE_URL` on Vercel the workspace endpoint returns an explicit setup error. It never silently switches deployed visitors to temporary filesystem storage. Without a private Blob connection, text review still works but uploads report the missing storage configuration.
 
-## Stack and data flow
-
-- Next-compatible React/TypeScript app on Vinext/Vite and Cloudflare Workers through Sites.
-- D1/SQLite with a Drizzle-managed schema. A bounded JSON workspace snapshot is written with a compare-and-swap version check, making a single workflow change atomic.
-- R2 stores private original files under a hashed session prefix. A random 256-bit HttpOnly session cookie is hashed for database lookup; the raw token is not stored in the database or returned in JSON.
-- Zod validates incoming actions. Server code decides permissions and approval transitions.
-- The rule engine runs before optional contextual AI review. AI output is validated, including source IDs and verbatim excerpts, before findings are displayed. Model output never authorises release.
-- SHA-256 covers content, purpose, channel, audience and asset metadata. Approvals also record the brand-pack version. Export rechecks these values and offer expiry.
-- PDF.js extracts browser-local PDF text. `fflate` creates download archives. Lucide supplies UI icons; the interface uses ordinary CSS.
-
-`app/accord-app.tsx` contains the UI; `app/api/` contains API routes; `lib/model.ts` defines domain records; `lib/review.ts` implements review; `lib/store.ts` handles D1/session access; `db/schema.ts` and `drizzle/` contain the schema and migrations.
+Existing Cloudflare demo records are **not migrated** automatically. Vercel visitors receive fresh isolated demo workspaces. The legacy Sites/Vite scaffolding remains in the repository for reference; the Next.js commands and active API routes do not use it.
 
 ## Run locally
 
-Node 22.13+ is required. Use the committed npm lockfile.
-
 ```sh
 npm ci
-node scripts/prepare-pdf-worker.mjs
-npm run build
-node --import ./scripts/sites-env.mjs ./node_modules/wrangler/bin/wrangler.js d1 execute DB --local --config dist/server/wrangler.json --persist-to .wrangler/state --file drizzle/0000_white_zaran.sql
 npm run dev
 ```
 
-Open the Local URL printed by the server (normally `http://127.0.0.1:5173`). This setup uses local D1/R2; deployed data is separate. The included Sites helpers maintain the host execution profile and deployment bindings.
+Open `http://127.0.0.1:3000`. Node.js 22.13+ is required. PDF.js's worker is already included; the production build also copies it from the installed package.
 
-For optional contextual AI review, configure `GEMINI_API_KEY` as a server-side runtime secret and optionally `GEMINI_MODEL` (default `gemini-3.8-flash`). Never use a `NEXT_PUBLIC_` key or commit secrets. See `.env.example` for names only. For local development, put these values in ignored `.env.local`. For the hosted demo, add the key through Sites runtime environment settings and redeploy a saved version; a local file does not configure the public app. The server calls the Gemini REST generateContent API with a JSON response schema, bounded output and a 35-second timeout. It sends submitted text, declared creative text and active references to Google; it does not send original image bytes. All findings are validated before any model result is accepted. Verify provider connectivity separately from mocked tests. No Gemini key is configured in the delivered demo yet; live provider verification is pending your later key setup.
+For local development without service credentials, workspaces and originals persist under ignored `.accord-data/`. Workspace writes use an atomic file replacement and a per-workspace lock. This adapter is disabled on Vercel. To test hosted services locally, configure the relevant environment variables in ignored `.env.local`; Next.js loads them automatically. For OIDC Blob access locally, use Vercel's supported environment pull/auth flow or a local read/write token.
+
+Uploads are capped at **4 MB per original** so multipart requests stay below the Vercel Functions request limit. Text-based PDFs support up to 20 pages and 14,000 extracted characters. The server checks file signatures rather than trusting the supplied extension.
+
+## Try the complete workflow
+
+1. Choose **Review sample** and **Run checks**.
+2. Expand a finding's cited source. Try submitting the unchanged draft: blockers prevent it.
+3. Make edits or use **Use corrected example**, then **Save revision** and run checks again.
+4. **Submit for approval** and choose **Reviewer · demo** in the top bar.
+5. **Approve revision**, enter a decision note and confirm inspection of the coverage gaps.
+6. **Verify & export** downloads the exact approved package. Editing the content or changing a reference invalidates the approval.
+
+Each browser session has a separate persisted workspace. Lumen is fictional. Persona switching is a demonstration of workflow permissions, **not authentication of distinct employees**.
+
+## Completed features
+
+- Campaign purpose, audience, channel and saved revisions.
+- Versioned, reviewer-editable brand references with captured source snapshots.
+- Discount, eligibility, expiry, qualification, terminology and unsupported-promise pattern checks.
+- Image text supplied by the creator, PDF text extracted locally, and cross-item discount comparisons.
+- Declared logo-version checks, alternative-text presence and supplied-colour contrast measurement.
+- Private original uploads and session-checked retrieval.
+- Explanations, suggested edits, comments, revision comparisons, request-changes decisions and reasoned dismissals.
+- Human approval tied to the exact SHA-256 content hash and reference version.
+- Server-verified ZIP export containing approved copy, original files and evidence/audit JSON.
+- Issue-category insights, rule disagreements and bounded activity history.
+- Optional Gemini contextual review with structured response validation and explicit incomplete coverage on failure.
+
+## Implementation
+
+React 19 and TypeScript run in Next.js App Router. Server route handlers validate actions with Zod. Neon Postgres stores bounded workspace snapshots; conditional version updates reject stale writes atomically. A random 256-bit HttpOnly session cookie is hashed before database lookup. Private Vercel Blob objects are prefixed with that hashed workspace key; browsers receive only session-checked application file URLs.
+
+`lib/storage.ts` contains hosted storage and the development adapter. `lib/store.ts` owns session lookup and persistence. `lib/review.ts` implements checks. `app/api/` enforces the workflow. `app/accord-app.tsx` and `app/accord.css` implement the product interface. The UI uses existing components and icons, system typography, a compact campaign register and a source-reference desk.
+
+Fixed checks run before Gemini. The server sends submitted text, declared creative text and active references to Google, not original image bytes. Structured findings must use valid source IDs and excerpts present in the submitted content. A single invalid finding rejects the entire model batch. Blocked/truncated generations, bad citations, invented excerpts and provider errors leave contextual coverage incomplete. Model output never grants approval.
+
+Gemini has not been verified live without the participant's API key. Mocked transport tests establish request/validation behaviour only.
 
 ## Verify
 
 ```sh
 npm run typecheck
 npm test
+npm run build
 # With the local server running:
 npm run test:workflow
-# Against a deployed environment, if desired:
-# ACCORD_TEST_URL=https://your-site.example npm run test:workflow
 ```
 
-Unit tests cover rule behaviour, clean content, changing evidence, expiry, contrast, copied evidence, hashes and invalid model citations. The model-transport test is mocked; it is not evidence of a live provider call.
+Set `ACCORD_TEST_URL` to test a configured hosted deployment. Workflow tests create their own disposable sessions and inspect review, approval, release, stale writes, origin checks, file isolation and ZIP bytes. Unit tests cover rules, hashes, source snapshots and Gemini failure handling.
 
-The API workflow test creates isolated disposable demo sessions and checks the complete review-to-export sequence, blocked transitions, workspace boundaries, origin enforcement, file persistence, stale approvals and concurrency. It does not modify another visitor's workspace.
+## Changes from the proposal
 
-## Changes from the Round 1 proposal
+The original proposal used Next.js/FastAPI, PostgreSQL and server extraction. Round 2 initially used a single Vinext Worker with D1/R2. This revision moves the running application to **Next.js + Neon + private Vercel Blob** for Vercel deployment. The data model, source-backed findings and approval semantics are retained. The UI removes promotional slogans and illustration panels in favour of a quieter working interface.
 
-The product name is Accord. A single TypeScript Worker application replaces the planned Next.js/FastAPI split, and D1/R2 replace PostgreSQL/private object storage for the hosted event prototype. This removes a second deployment and keeps the core journey working in one environment. Evidence retrieval currently uses the small structured brand pack rather than embeddings. Contextual AI now uses Gemini instead of the originally planned OpenAI provider, following the participant's preference.
-
-PDF.js replaces server-side PyMuPDF. Automated image OCR and logo recognition are deferred: the creator supplies visible image text, colour values and logo-version metadata, and the reviewer verifies them against the original. The interface labels this clearly. Real employee invitations and independent role authentication are also deferred; public demo personas make the workflow testable without inventing real team members.
+PDF.js replaces PyMuPDF. Automatic image OCR/logo recognition remains deferred in favour of clearly labelled declarations and human inspection. Real employee invitations and independent role authentication remain Round 3 work. Gemini replaces the originally proposed OpenAI provider at the participant's request.
 
 ## Three substantive Round 3 improvements
 
-1. **Authenticated collaboration and separation of duties.** Invite real creators/managers/reviewers, enforce tenant membership and independent claim approval, and deliver reviewer assignments/notifications. Test that creators cannot grant themselves approval rights and that revoked users lose data access.
-2. **Automated multimodal evidence collection.** OCR image regions, detect supported logo variants and annotate visual/accessibility findings on the original; add native DOCX/slide extraction. Record extraction confidence, request manual inspection when uncertain, and evaluate against labelled clean and problematic assets.
-3. **Connected publishing with evidence lifecycle control.** Add a CMS publishing integration that releases only the approved hash, supports scheduled releases and cancels stale schedules after reference changes or expiry. Test duplicate webhooks, expired offers and changed drafts against a real test CMS.
+1. **Authenticated collaboration and independent approvals:** real membership, invitations, assignments and revocation; creators cannot grant themselves approval rights.
+2. **Automated multimodal evidence collection:** OCR regions, supported logo recognition and annotated findings; native document/slide extraction and labelled quality evaluation.
+3. **Connected publishing and evidence lifecycle checks:** CMS publishing of the approved hash, scheduled release cancellation after edits/reference changes/expiry, and duplicate delivery handling.
 
-## Honest limits
+## Boundaries
 
-This public event demo is for fictional material. It is not ready for confidential production uploads. Session isolation is real; employee identity, enterprise retention policies and multi-user membership are not implemented. Sandbox cookies expire after seven days; hosted records are not automatically purged on that date. The activity log is bounded, not an immutable compliance ledger.
-
-Rule checks are intentionally scoped to the seeded brand pack and are not universal truth detection. Creator-supplied image metadata is not automatic visual recognition. Contrast checks do not establish full WCAG conformance. AI availability is displayed separately and a provider failure remains visible as incomplete contextual coverage requiring human inspection.
+Use fictional material in this event demo. Session isolation is implemented; organisation memberships, enterprise retention/deletion and an immutable compliance ledger are not. Session cookies expire after seven days, but stored records are not automatically purged then. Image metadata does not establish automatic visual recognition or full accessibility compliance. Contextual findings remain subject to human judgement.
 
 ## References
 
+- [Next.js on Vercel](https://vercel.com/docs/frameworks/full-stack/nextjs)
+- [Neon serverless driver](https://neon.com/docs/serverless/serverless-driver)
+- [Private Vercel Blob](https://vercel.com/docs/vercel-blob/using-blob-sdk)
+- [Gemini structured outputs](https://ai.google.dev/gemini-api/docs/generate-content/structured-output)
 - [WCAG 2.2](https://www.w3.org/TR/WCAG22/)
-- [OWASP: Prompt Injection](https://genai.owasp.org/llmrisk/llm01-prompt-injection/)
-- [Google: Gemini structured outputs](https://ai.google.dev/gemini-api/docs/generate-content/structured-output)
