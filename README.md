@@ -28,7 +28,7 @@ Each browser session receives a separate server-persisted sandbox. Lumen is fict
 - ZIP export containing exact copy, uploaded originals and JSON evidence/audit receipt. Missing originals fail the export.
 - Category counts, rule-disagreement summaries and persisted activity history.
 - Optimistic concurrency, same-origin mutation checks and session-bound file/data access.
-- Optional server-side OpenAI contextual review. **This is active only when a valid runtime key is configured. Without it, the UI says rules + human review; no AI result is fabricated.**
+- Optional server-side Gemini contextual review. **This is active only when a valid runtime key is configured. Without it, the UI says rules + human review; no AI result is fabricated.**
 
 ## Stack and data flow
 
@@ -56,7 +56,7 @@ npm run dev
 
 Open the Local URL printed by the server (normally `http://127.0.0.1:5173`). This setup uses local D1/R2; deployed data is separate. The included Sites helpers maintain the host execution profile and deployment bindings.
 
-For optional contextual AI review, configure `OPENAI_API_KEY` as a server-side runtime secret and optionally `OPENAI_MODEL` (default `gpt-4.1-mini`). Never use a `NEXT_PUBLIC_` key or commit secrets. See `.env.example` for names only. The API uses `store: false`, bounded output and a timeout. Verify provider connectivity separately from mocked tests. Follow the approved key-creation flow for hosted Sites; do not put keys in the hosting manifest.
+For optional contextual AI review, configure `GEMINI_API_KEY` as a server-side runtime secret and optionally `GEMINI_MODEL` (default `gemini-3.8-flash`). Never use a `NEXT_PUBLIC_` key or commit secrets. See `.env.example` for names only. For local development, put these values in ignored `.env.local`. For the hosted demo, add the key through Sites runtime environment settings and redeploy a saved version; a local file does not configure the public app. The server calls the Gemini REST generateContent API with a JSON response schema, bounded output and a 35-second timeout. It sends submitted text, declared creative text and active references to Google; it does not send original image bytes. All findings are validated before any model result is accepted. Verify provider connectivity separately from mocked tests. No Gemini key is configured in the delivered demo yet; live provider verification is pending your later key setup.
 
 ## Verify
 
@@ -75,7 +75,7 @@ The API workflow test creates isolated disposable demo sessions and checks the c
 
 ## Changes from the Round 1 proposal
 
-The product name is Accord. A single TypeScript Worker application replaces the planned Next.js/FastAPI split, and D1/R2 replace PostgreSQL/private object storage for the hosted event prototype. This removes a second deployment and keeps the core journey working in one environment. Evidence retrieval currently uses the small structured brand pack rather than embeddings.
+The product name is Accord. A single TypeScript Worker application replaces the planned Next.js/FastAPI split, and D1/R2 replace PostgreSQL/private object storage for the hosted event prototype. This removes a second deployment and keeps the core journey working in one environment. Evidence retrieval currently uses the small structured brand pack rather than embeddings. Contextual AI now uses Gemini instead of the originally planned OpenAI provider, following the participant's preference.
 
 PDF.js replaces server-side PyMuPDF. Automated image OCR and logo recognition are deferred: the creator supplies visible image text, colour values and logo-version metadata, and the reviewer verifies them against the original. The interface labels this clearly. Real employee invitations and independent role authentication are also deferred; public demo personas make the workflow testable without inventing real team members.
 
@@ -95,4 +95,4 @@ Rule checks are intentionally scoped to the seeded brand pack and are not univer
 
 - [WCAG 2.2](https://www.w3.org/TR/WCAG22/)
 - [OWASP: Prompt Injection](https://genai.owasp.org/llmrisk/llm01-prompt-injection/)
-- [OpenAI: Structured model outputs](https://developers.openai.com/api/docs/guides/structured-outputs)
+- [Google: Gemini structured outputs](https://ai.google.dev/gemini-api/docs/generate-content/structured-output)
